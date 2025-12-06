@@ -36,8 +36,6 @@ You can also click the toolbar icon to activate the Markdown picker.
 | Shortcuts | `Ctrl+Shift+M/S` | `Alt+Shift+M/X` |
 | Screenshot | Full element via CDP | Viewport only |
 | Background | Service worker + offscreen | Event page |
-| URL resolution | ❌ | ✅ |
-| Wikipedia cleanup | ❌ | ✅ |
 
 ## Credits
 
