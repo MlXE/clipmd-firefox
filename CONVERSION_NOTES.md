@@ -2,7 +2,7 @@
 
 ## Overview
 
-This document summarizes the conversion of [ClipMD](https://github.com/AnswerDotAI/clipmd) from a Chrome extension to Firefox. The Firefox version maintains feature parity while adapting to Firefox's extension architecture.
+This document summarizes the conversion of [ClipMD](https://github.com/AnswerDotAI/clipmd) from a Chrome extension to Firefox. The Firefox version attempts to maintains feature parity while adapting to Firefox's extension architecture.
 
 ## Feature Comparison
 
