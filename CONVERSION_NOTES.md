@@ -2,7 +2,11 @@
 
 ## Overview
 
+<<<<<<< HEAD
 This document summarizes the conversion of [ClipMD](https://github.com/AnswerDotAI/clipmd) from a Chrome extension to Firefox. The Firefox version focuses on Markdown conversion only - screenshot functionality is omitted since Firefox has excellent built-in screenshot tools (`Ctrl+Shift+S`).
+=======
+This document summarizes the conversion of [ClipMD](https://github.com/AnswerDotAI/clipmd) from a Chrome extension to Firefox. The Firefox version attempts to maintains feature parity while adapting to Firefox's extension architecture.
+>>>>>>> ae4bbef74e089fb2305f0f5d65e4e81fb4fdd8e0
 
 ## Feature Comparison
 
