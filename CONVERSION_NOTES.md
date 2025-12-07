@@ -2,7 +2,7 @@
 
 ## Overview
 
-This document summarizes the conversion of [ClipMD](https://github.com/AnswerDotAI/clipmd) from a Chrome extension to Firefox. The Firefox version maintains feature parity while adapting to Firefox's extension architecture.
+This document summarizes the conversion of [ClipMD](https://github.com/AnswerDotAI/clipmd) from a Chrome extension to Firefox. The Firefox version focuses on Markdown conversion only - screenshot functionality is omitted since Firefox has excellent built-in screenshot tools (`Ctrl+Shift+S`).
 
 ## Feature Comparison
 
@@ -12,10 +12,9 @@ This document summarizes the conversion of [ClipMD](https://github.com/AnswerDot
 | **Element Picker** | Chrome DevTools Protocol (CDP) | Custom content script with mouseover events |
 | **Background** | Service Worker | Event Page (background.html) |
 | **DOM Access** | Offscreen document | Direct in background page |
-| **Clipboard (text)** | Content script via CDP | execCommand fallback |
-| **Clipboard (image)** | CDP + offscreen | Background page canvas.toBlob() |
-| **Screenshot** | CDP Page.captureScreenshot | browser.tabs.captureVisibleTab() |
-| **Keyboard Shortcuts** | Ctrl+Shift+M, Ctrl+Shift+S | Alt+Shift+M, Alt+Shift+X |
+| **Clipboard** | Content script via CDP | navigator.clipboard with execCommand fallback |
+| **Screenshot** | CDP Page.captureScreenshot | Not included (use Firefox built-in) |
+| **Keyboard Shortcut** | Ctrl+Shift+M | Ctrl+Shift+Q |
 
 ## Key Architectural Differences
 
@@ -54,36 +53,19 @@ chrome.offscreen.createDocument({url: 'offscreen.html', ...});
 ```
 Turndown runs directly in the background page.
 
-### 3. Screenshot Capture
-
-**Chrome**: Full element capture via CDP, regardless of viewport:
-```javascript
-chrome.debugger.sendCommand({tabId}, "Page.captureScreenshot", {
-  clip: {x, y, width, height, scale: 1}
-});
-```
-
-**Firefox**: Limited to visible viewport:
-```javascript
-const dataUrl = await browser.tabs.captureVisibleTab(null, {format: 'png'});
-// Then crop using canvas
-```
-
-### 4. Clipboard Access
+### 3. Clipboard Access
 
 **Chrome**: Works via offscreen document with full Clipboard API access.
 
-**Firefox**: Strict user gesture requirements. Solutions:
-- **Text**: Use `document.execCommand('copy')` fallback
-- **Images**: Write from background page using `canvas.toBlob()` + `navigator.clipboard.write()`
+**Firefox**: Strict user gesture requirements. Uses `navigator.clipboard.writeText()` as primary with `document.execCommand('copy')` fallback for older browsers.
 
 ## Firefox-Specific Challenges & Solutions
 
 ### Reserved Keyboard Shortcuts
 - `Ctrl+Shift+M` → Firefox Responsive Design Mode
-- `Ctrl+Shift+S` → Firefox Screenshot Tool
+- `Ctrl+Shift+S` → Firefox Screenshot Tool (use this for screenshots!)
 
-**Solution**: Use `Alt+Shift+*` pattern instead.
+**Solution**: Use `Ctrl+Shift+Q` which is available.
 
 ### Content Security Policy (CSP)
 Sites like GitHub block `fetch("data:...")` calls.
@@ -147,14 +129,13 @@ Chrome (clipmd/)              Firefox (clipmd-firefox/)
 3. Select `manifest.json`
 
 **Keyboard Shortcuts**:
-- `Alt+Shift+M` - Copy element as Markdown
-- `Alt+Shift+X` - Copy element as Screenshot
+- `Ctrl+Shift+Q` - Copy element as Markdown
+- `Ctrl+Shift+S` - Firefox built-in screenshot (not part of this extension)
 
 ## Known Limitations (Firefox)
 
-1. **Screenshot size**: Limited to viewport; elements larger than screen get cropped
-2. **No native picker overlay**: Custom CSS highlight instead of DevTools-style overlay
-3. **Clipboard timing**: Image clipboard may fail on some sites; falls back to opening in new tab
+1. **No native picker overlay**: Custom CSS highlight instead of DevTools-style overlay
+2. **Restricted pages**: Cannot run on `about:*` pages, `addons.mozilla.org`, or local files (shows notification explaining why)
 
 ## Improvements Over Chrome Version
 

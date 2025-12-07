@@ -19,6 +19,69 @@ td.addRule('fencedCodeBlock', {
   }
 });
 
+// Fix empty links - use URL as title, or skip if truly empty
+td.addRule('emptyLinks', {
+  filter: function(node) {
+    return node.nodeName === 'A' && node.getAttribute('href');
+  },
+  replacement: function(content, node) {
+    const href = node.getAttribute('href');
+    const title = node.getAttribute('title');
+    
+    // Clean up content - remove just whitespace
+    const cleanContent = content.trim();
+    
+    // If link has content, use standard link format
+    if (cleanContent && cleanContent !== '![]') {
+      // Handle image links specially - content is already ![...]
+      if (cleanContent.startsWith('![')) {
+        return cleanContent; // Image is sufficient, skip wrapping in link
+      }
+      return '[' + cleanContent + '](' + href + ')';
+    }
+    
+    // Empty link - check for image inside
+    const img = node.querySelector('img');
+    if (img) {
+      const alt = img.getAttribute('alt') || '';
+      const src = img.getAttribute('src') || href;
+      return '![' + alt + '](' + src + ')';
+    }
+    
+    // Use title attribute if available
+    if (title) {
+      return '[' + title + '](' + href + ')';
+    }
+    
+    // Last resort: use the URL itself as display text (truncated if long)
+    // Skip javascript: and anchor-only links
+    if (href.startsWith('javascript:') || href === '#') {
+      return '';
+    }
+    
+    // For actual URLs, show a shortened version
+    try {
+      const url = new URL(href, 'https://example.com');
+      const displayText = url.pathname !== '/' 
+        ? decodeURIComponent(url.pathname.split('/').pop() || url.hostname)
+        : url.hostname;
+      return '[' + (displayText || href) + '](' + href + ')';
+    } catch {
+      return '[link](' + href + ')';
+    }
+  }
+});
+
+// Remove empty image references
+td.addRule('emptyImages', {
+  filter: function(node) {
+    return node.nodeName === 'IMG' && !node.getAttribute('src');
+  },
+  replacement: function() {
+    return '';
+  }
+});
+
 // Handle messages from content script
 browser.runtime.onMessage.addListener(async (msg, sender) => {
   console.log('[ClipMD] Received message:', msg.type);
@@ -36,68 +99,11 @@ browser.runtime.onMessage.addListener(async (msg, sender) => {
     } catch (err) {
       console.error('[ClipMD] Markdown conversion failed:', err);
     }
-  } else if (msg.type === 'captureScreenshot') {
-    try {
-      console.log('[ClipMD] Capturing screenshot for rect:', msg.rect);
-      
-      // Capture visible tab
-      const dataUrl = await browser.tabs.captureVisibleTab(null, { format: 'png' });
-      
-      // Crop to element bounds using canvas in background page
-      const img = new Image();
-      img.onload = async () => {
-        const canvas = document.createElement('canvas');
-        const dpr = msg.devicePixelRatio || 1;
-        
-        canvas.width = msg.rect.width * dpr;
-        canvas.height = msg.rect.height * dpr;
-        
-        const ctx = canvas.getContext('2d');
-        ctx.drawImage(img, 
-          msg.rect.x * dpr, msg.rect.y * dpr, 
-          msg.rect.width * dpr, msg.rect.height * dpr,
-          0, 0, canvas.width, canvas.height
-        );
-        
-        // Copy to clipboard directly in background page (has DOM access)
-        try {
-          canvas.toBlob(async (blob) => {
-            try {
-              await navigator.clipboard.write([
-                new ClipboardItem({ 'image/png': blob })
-              ]);
-              console.log('[ClipMD] Image copied to clipboard from background');
-              // Notify content script of success
-              await browser.tabs.sendMessage(sender.tab.id, {
-                type: 'showToast',
-                message: 'Screenshot copied!',
-                success: true
-              });
-            } catch (clipErr) {
-              console.error('[ClipMD] Clipboard write failed:', clipErr);
-              // Fallback: open in new tab
-              const croppedDataUrl = canvas.toDataURL('image/png');
-              await browser.tabs.create({ url: croppedDataUrl });
-              await browser.tabs.sendMessage(sender.tab.id, {
-                type: 'showToast',
-                message: 'Opened in new tab (clipboard blocked)',
-                success: false
-              });
-            }
-          }, 'image/png');
-        } catch (err) {
-          console.error('[ClipMD] toBlob failed:', err);
-        }
-      };
-      img.src = dataUrl;
-    } catch (err) {
-      console.error('[ClipMD] Screenshot failed:', err);
-    }
   }
 });
 
 // Inject content script and start picker
-async function run(mode, tab) {
+async function run(tab) {
   let target = tab;
   
   if (!target?.id) {
@@ -110,33 +116,57 @@ async function run(mode, tab) {
     return;
   }
   
-  console.log('[ClipMD] Starting picker in mode:', mode, 'for tab:', target.id);
+  console.log('[ClipMD] Starting picker for tab:', target.id);
   
   try {
     // Inject the picker script
     await browser.scripting.executeScript({
-      target: { tabId: target.id },
+      target: { tabId: target.id, allFrames: true },
       files: ['picker.js']
     });
     
     // Tell it to start
-    await browser.tabs.sendMessage(target.id, { type: 'startPicker', mode });
+    await browser.tabs.sendMessage(target.id, { type: 'startPicker' });
   } catch (err) {
     console.error('[ClipMD] Failed to inject picker:', err);
+    
+    // Show user-friendly notification for restricted pages
+    const url = target.url || '';
+    let reason = 'Unknown error';
+    
+    if (url.startsWith('about:') || url.startsWith('moz-extension:')) {
+      reason = 'Cannot run on browser internal pages';
+    } else if (url.includes('addons.mozilla.org')) {
+      reason = 'Cannot run on Mozilla Add-ons site (Firefox restriction)';
+    } else if (url.startsWith('file:')) {
+      reason = 'Cannot run on local files (enable in extension settings)';
+    } else if (!url || url === 'about:blank') {
+      reason = 'No page loaded';
+    } else {
+      reason = 'This page restricts extensions';
+    }
+    
+    // Use notifications API if available, otherwise log
+    try {
+      await browser.notifications.create({
+        type: 'basic',
+        iconUrl: 'icons/icon48.png',
+        title: 'ClipMD',
+        message: reason
+      });
+    } catch (notifErr) {
+      console.warn('[ClipMD] Notification failed:', notifErr, 'Reason:', reason);
+    }
   }
 }
 
 // Handle toolbar button click
-browser.action.onClicked.addListener(tab => run('markdown', tab));
+browser.action.onClicked.addListener(tab => run(tab));
 
-// Handle keyboard shortcuts
+// Handle keyboard shortcuts  
 browser.commands.onCommand.addListener((command, tab) => {
   console.log('[ClipMD] Command received:', command);
-  if (command === '_execute_action') {
-    run('markdown', tab);
-  } else if (command === 'clipmd-screenshot') {
-    run('screenshot', tab);
-  }
+  if (command === '_execute_action') run(tab);
 });
 
 console.log('[ClipMD] Background script loaded');

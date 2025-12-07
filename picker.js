@@ -49,10 +49,8 @@
   }
   
   let lastHighlighted = null;
-  let mode = 'markdown'; // or 'screenshot'
   let isActive = false;
   let modalEl = null;
-  let pendingClipboardData = null; // Store data for clipboard write on user gesture
   
   const HIGHLIGHT_STYLE = {
     outline: '3px solid rgba(111, 168, 220, 0.9)',
@@ -68,7 +66,7 @@
         <span style="font-size:20px;">🎯</span>
         <div>
           <div style="font-weight:600;">ClipMD Active</div>
-          <div style="font-size:12px;opacity:0.8;">Click an element to ${mode === 'markdown' ? 'copy as Markdown' : 'capture screenshot'}</div>
+          <div style="font-size:12px;opacity:0.8;">Click an element to copy as Markdown</div>
           <div style="font-size:11px;opacity:0.6;margin-top:4px;">Press ESC to cancel</div>
         </div>
       </div>
@@ -148,8 +146,7 @@
     unhighlight(el);
     cleanup();
     
-    if (mode === 'markdown') {
-      // Clone element and clean up before conversion
+    // Clone element and clean up before conversion
       const clone = el.cloneNode(true);
       const baseUrl = window.location.href;
       
@@ -204,36 +201,8 @@
       clone.querySelectorAll('[class]').forEach(el => el.removeAttribute('class'));
       
       const html = clone.outerHTML;
-      console.log('[ClipMD Picker] Sending HTML for conversion, length:', html.length);
-      browser.runtime.sendMessage({ type: 'convertMarkdown', html });
-    } else {
-      // Screenshot mode - scroll into view and capture via background
-      el.scrollIntoView({ behavior: 'instant', block: 'start' });
-      
-      // Wait for scroll to settle
-      await new Promise(r => setTimeout(r, 100));
-      
-      const rect = el.getBoundingClientRect();
-      const dpr = window.devicePixelRatio || 1;
-      
-      // Calculate visible portion (clamp to viewport)
-      const visibleRect = {
-        x: Math.max(0, rect.x) * dpr,
-        y: Math.max(0, rect.y) * dpr,
-        width: Math.min(rect.width, window.innerWidth - Math.max(0, rect.x)) * dpr,
-        height: Math.min(rect.height, window.innerHeight - Math.max(0, rect.y)) * dpr
-      };
-      
-      console.log('[ClipMD Picker] Capturing screenshot, visibleRect:', visibleRect);
-      
-      // Request screenshot from background
-      browser.runtime.sendMessage({ 
-        type: 'captureScreenshot', 
-        rect: visibleRect,
-        fullHeight: rect.height * dpr,
-        fullWidth: rect.width * dpr
-      });
-    }
+    console.log('[ClipMD Picker] Sending HTML for conversion, length:', html.length);
+    browser.runtime.sendMessage({ type: 'convertMarkdown', html });
   }
   
   function onKeyDown(e) {
@@ -259,8 +228,7 @@
     console.log('[ClipMD Picker] Cleaned up');
   }
   
-  function startPicker(pickerMode) {
-    mode = pickerMode;
+  function startPicker() {
     isActive = true;
     window.__clipmd_picker_active = true;
     
@@ -270,13 +238,28 @@
     document.addEventListener('keydown', onKeyDown, true);
     document.body.style.cursor = 'crosshair';
     
-    showModal();
-    console.log('[ClipMD Picker] Started in mode:', mode);
+    // Only show modal in top frame (avoid duplicates in iframes)
+    if (window === window.top) {
+      showModal();
+    }
+    console.log('[ClipMD Picker] Started', window === window.top ? '(top frame)' : '(iframe)');
   }
   
-  // Clipboard operations - uses execCommand fallback for Firefox compatibility
-  function copyTextToClipboard(text) {
-    // Use execCommand for reliable copy (works without user gesture)
+  // Clipboard operations - modern API with legacy fallback
+  async function copyTextToClipboard(text) {
+    // Try modern clipboard API first
+    if (navigator.clipboard?.writeText) {
+      try {
+        await navigator.clipboard.writeText(text);
+        showNotification('Markdown copied!');
+        console.log('[ClipMD Picker] Text copied via Clipboard API');
+        return;
+      } catch (err) {
+        console.warn('[ClipMD Picker] Clipboard API failed, trying fallback:', err);
+      }
+    }
+    
+    // Fallback to execCommand (deprecated but widely supported)
     const ta = document.createElement('textarea');
     ta.value = text;
     ta.style.cssText = 'position:fixed;left:-9999px;top:0;';
@@ -285,56 +268,12 @@
     try {
       document.execCommand('copy');
       showNotification('Markdown copied!');
-      console.log('[ClipMD Picker] Text copied to clipboard');
+      console.log('[ClipMD Picker] Text copied via execCommand');
     } catch (err) {
       console.error('[ClipMD Picker] Clipboard write failed:', err);
       showNotification('Copy failed - try again');
     }
     document.body.removeChild(ta);
-  }
-  
-  async function copyImageToClipboard(base64Data) {
-    try {
-      // Convert base64 to blob without fetch() to avoid CSP issues
-      const byteCharacters = atob(base64Data);
-      const byteNumbers = new Array(byteCharacters.length);
-      for (let i = 0; i < byteCharacters.length; i++) {
-        byteNumbers[i] = byteCharacters.charCodeAt(i);
-      }
-      const byteArray = new Uint8Array(byteNumbers);
-      const blob = new Blob([byteArray], { type: 'image/png' });
-      
-      // Try clipboard API first
-      if (navigator.clipboard && navigator.clipboard.write) {
-        await navigator.clipboard.write([
-          new ClipboardItem({ 'image/png': blob })
-        ]);
-        showNotification('Screenshot copied!');
-        console.log('[ClipMD Picker] Image copied to clipboard');
-      } else {
-        // Fallback: open image in new tab
-        const url = URL.createObjectURL(blob);
-        window.open(url, '_blank');
-        showNotification('Screenshot opened in new tab');
-      }
-    } catch (err) {
-      console.error('[ClipMD Picker] Image clipboard write failed:', err);
-      // Fallback: open blob URL
-      try {
-        const byteCharacters = atob(base64Data);
-        const byteNumbers = new Array(byteCharacters.length);
-        for (let i = 0; i < byteCharacters.length; i++) {
-          byteNumbers[i] = byteCharacters.charCodeAt(i);
-        }
-        const byteArray = new Uint8Array(byteNumbers);
-        const blob = new Blob([byteArray], { type: 'image/png' });
-        const url = URL.createObjectURL(blob);
-        window.open(url, '_blank');
-        showNotification('Screenshot opened in new tab (clipboard blocked)');
-      } catch (e) {
-        showNotification('Screenshot failed');
-      }
-    }
   }
   
   function showNotification(message) {
@@ -377,7 +316,7 @@
     console.log('[ClipMD Picker] Received message:', msg.type);
     
     if (msg.type === 'startPicker') {
-      startPicker(msg.mode);
+      startPicker();
     } else if (msg.type === 'copyToClipboard') {
       copyTextToClipboard(msg.text);
     } else if (msg.type === 'showToast') {
