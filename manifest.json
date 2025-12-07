@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "Clipboard to Markdown",
-  "version": "1.1.4",
+  "version": "1.0.1",
   "description": "Pick an element and convert its HTML to Markdown.",
   "permissions": [
     "activeTab",
@@ -36,7 +36,7 @@
   },
   "browser_specific_settings": {
     "gecko": {
-      "id": "clipmd@answerdotai.com",
+      "id": "{624775a7-0404-4aad-a347-3414339d8799}",
       "strict_min_version": "109.0"
     }
   }

@@ -38,11 +38,6 @@ You can also click the toolbar icon to activate the picker.
 | Shortcut | `Ctrl+Shift+M` | `Ctrl+Shift+Q` |
 | Screenshot | Via extension | Use Firefox built-in (`Ctrl+Shift+S`) |
 | Background | Service worker + offscreen | Event page |
-<<<<<<< HEAD
-| URL resolution | ❌ | ✅ |
-| Empty link fix | ❌ | ✅ |
-=======
->>>>>>> ae4bbef74e089fb2305f0f5d65e4e81fb4fdd8e0
 
 ## Credits
 
